@@ -4,6 +4,9 @@
 
 -compile(export_all).
 
+%% INTRODUCTION
+%% ----------------------------------------------------------------------
+
 %% This code base example is a "Functional Lens Library" for Erlang.
 %% The idea of a Lens is to provide an abstraction which is
 %% * like an accessor/mutator pair in imperative OO languages, but
@@ -13,8 +16,14 @@
 %% that over time this will develop into a library for lenses in
 %% Erlang, even though what I will be able to do at spawn(fun() ->
 %% fest(2012) end) will be limited in extent.
+%%
+%% Much credit has to be given to Benjamin C. Pierce for describing
+%% lenses initially and to Sebastiaan Visser and many other members
+%% of the Haskell community for first writing up lenses and
+%% popularizing them.
 
-
+%% LENS DEFINITIONS
+%% ----------------------------------------------------------------------
 
 %% A dummy record which we use for doing the initial testing stuff on lenses.
 -record(r, {a :: integer(),
@@ -54,27 +63,15 @@ lens_color(b) -> access_e(#color.b).
 lens_kitten(name) -> access_e(#kitten.name);
 lens_kitten(color) -> access_e(#kitten.color).
 
+%% INITIAL PROPERTIES OF LENSES
+%% ----------------------------------------------------------------------
+
 %% In order to run EQC tests on this repository you need to have a way
 %% to generate random 'r' records. This generator allows us to do
 %% that, with integers as the contents.
 gen_r() ->
     ?LET({A, B}, {int(), int()},
          #r { a = A, b = B}).
-
-%% Our naive lenses behave as our accessor lenses
-prop_naive_access_e() ->
-    ?FORALL({R, I}, {gen_r(), int()},
-            begin
-                {GetNA, PutNA} = lens_r_naive(a),
-                {GetNB, PutNB} = lens_r_naive(b),
-                {GetA,  PutA}  = lens_r(a),
-                {GetB,  PutB}  = lens_r(b),
-                
-                lists:all([GetNA(R) == GetA(R),
-                           GetNB(R) == GetB(R),
-                           PutNA(R, I) == PutA(R, I),
-                           PutNB(R, I) == PutB(R, I)])
-            end).
 
 %% Lenses have three properties. If we get out a value and then
 %% subsequently put it, nothing should change.
@@ -107,12 +104,53 @@ lens_prop_putput(Gen, Val, Lens) ->
 
 %% EQC properties for all of these for the lens on the #r{} record. We
 %% can now make sure our code works for all of these.
-prop_r_a_gp() -> lens_prop_getput(gen_r(), lens_r_naive(a)).
-prop_r_b_gp() -> lens_prop_getput(gen_r(), lens_r_naive(b)).
+prop_r_a_gp() -> lens_prop_getput(gen_r(), lens_r(a)).
+prop_r_b_gp() -> lens_prop_getput(gen_r(), lens_r(b)).
 prop_r_a_pg() -> lens_prop_putget(gen_r(), int(), lens_r(a)).
 prop_r_b_pg() -> lens_prop_putget(gen_r(), int(), lens_r(b)).
 prop_r_a_pp() -> lens_prop_putput(gen_r(), int(), lens_r(a)).
 prop_r_b_pp() -> lens_prop_putput(gen_r(), int(), lens_r(b)).
+
+
+%% LENS COMPOSITION
+%% ----------------------------------------------------------------------
+
+%% What sets lenses apart from the OO-style accessor/mutator pairs is
+%% that they allow composition. That is, we can use lenses to form new lenses.
+%%
+%% Getting the composite is easy. You just "drill down" until you hit
+%% whatever is there.
+%% Putting requires more thought. You need to First Get out the
+%% component of L so you can push that to K's put.
+compose({LG, LP}, {KG, KP}) ->
+    {fun(R) -> KG(LG(R)) end,
+     fun(A, R) -> LP(KP(A, LG(R)), R) end}.
+
+%% The algebra has an identity lens:
+lens_id() ->
+    {fun(X) -> X end,
+     fun(A, _X) -> A end}.
+
+%% To show that this forms a lens, let us run it through the EQC test
+%% for the beast.
+prop_id_gp() -> lens_prop_getput(int(), lens_id()).
+prop_id_pg() -> lens_prop_putget(int(), int(), lens_id()).
+
+%% Since the algebra has an identity lens, it is now trivial to build
+%% a composition over a list of lenses. There is a strong indication
+%% that we have a MONOID over lenses.
+compose(Lenses) when is_list(Lenses) ->
+    lists:foldl(fun compose/2, lens_id(), Lenses).
+
+%% *** KITTENS!
+
+%% Here will be a nice part about lens composition over kittens :)
+%% TODO
+
+%% Missing parts:
+%% * Modify of lenses.
+%% * Pair-lists and lenses
+%% * JSON and lenses
 
 %% To make sure everything is okay, this call verifies all the
 %% properties inside the module, so we make sure that we don't cheat
