@@ -1,3 +1,4 @@
 *.beam
 /ebin/erlens.app
 /.eqc-info
+/current_counterexample.eqc
