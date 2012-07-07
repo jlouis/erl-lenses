@@ -29,6 +29,11 @@ lens_prop_putget(Gen, Val, Lens) ->
     ?FORALL({X, A}, {Gen, Val},
             A == Get(Put(A, X))).
 
+lens_prop_putput(Gen, Val, Lens) ->
+    {Get, Put} = Lens,
+    ?FORALL({X, A, A1}, {Gen, Val, Val},
+            Put(A1, Put(A, X)) == Put(A1, X)).
+
 prop_t1() ->
     lens_prop_getput(gen_r(), lens_a_access()).
 
@@ -41,3 +46,11 @@ prop_t3() ->
 prop_t4() ->
     lens_prop_putget(gen_r(), int(), lens_b_access()).
 
+prop_t5() ->
+    lens_prop_putput(gen_r(), int(), lens_a_access()).
+
+prop_t6() ->
+    lens_prop_putput(gen_r(), int(), lens_b_access()).
+
+t() ->
+    eqc:module({numtests, 1000}, ?MODULE).
