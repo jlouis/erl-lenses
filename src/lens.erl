@@ -10,15 +10,12 @@
 
 %% A lens accessor for the 'a' parameter in the record. In due time,
 %% these can be generated automatically by a parse transform
-lens_a_access() ->
-    {fun(#r { a = A}) -> A end,
-     fun(X, R) -> R#r { a = X } end}.
-
 %% Likewise for the 'b' parameter.
-lens_b_access() ->
-    {fun(#r { b = A }) -> A end,
-     fun(X, R) -> R#r { b = X } end}.
-
+lens_r(a) -> {fun(#r { a = A}) -> A end,
+              fun(X, R) -> R#r { a = X } end};
+lens_r(b) -> {fun(#r { b = A }) -> A end,
+              fun(X, R) -> R#r { b = X } end}.
+    
 %% In order to run EQC tests on this repository you need to have a way
 %% to generate random 'r' records. This generator allows us to do
 %% that, with integers as the contents.
@@ -50,22 +47,22 @@ lens_prop_putput(Gen, Val, Lens) ->
 
 %% EQC properties for all of these
 prop_t1() ->
-    lens_prop_getput(gen_r(), lens_a_access()).
+    lens_prop_getput(gen_r(), lens_r(a)).
 
 prop_t2() ->
-    lens_prop_getput(gen_r(), lens_b_access()).
+    lens_prop_getput(gen_r(), lens_r(b)).
 
 prop_t3() ->
-    lens_prop_putget(gen_r(), int(), lens_a_access()).
+    lens_prop_putget(gen_r(), int(), lens_r(a)).
 
 prop_t4() ->
-    lens_prop_putget(gen_r(), int(), lens_b_access()).
+    lens_prop_putget(gen_r(), int(), lens_r(b)).
 
 prop_t5() ->
-    lens_prop_putput(gen_r(), int(), lens_a_access()).
+    lens_prop_putput(gen_r(), int(), lens_r(a)).
 
 prop_t6() ->
-    lens_prop_putput(gen_r(), int(), lens_b_access()).
+    lens_prop_putput(gen_r(), int(), lens_r(b)).
 
 %% Test our code :)
 t() ->
