@@ -18,6 +18,12 @@
 %% Erlang, even though what I will be able to do at spawn(fun() ->
 %% fest(2012) end) will be limited in extent.
 %%
+%% In the longer run, it can be expanded further so we get a full
+%% lens-library with parse transforms on top as well. But for now, we
+%% mostly go for a simple analysis of the library - written over the
+%% course of roughly 24 hours on and off. The sun is shining and
+%% drinking beer in the sun also has priority in this world :)
+%%
 %% Much credit has to be given to Benjamin C. Pierce for describing
 %% lenses initially and to Sebastiaan Visser and many other members
 %% of the Haskell community for first writing up lenses and
@@ -32,7 +38,19 @@
 %% ----------------------------------------------------------------------
 
 %% This is not built for the sake of raw conversion speed. If you need
-%% that, you need something else. This is built because it is 
+%% that, you need something else. This is built because it is
+%% extremely flexible when you want to do surgery on different
+%% structures in Erlang.
+%%
+%% The coolest part is that you can use a lens library to operate
+%% while transforming one data structure into a another. As an
+%% example, the Harmony project can convert seamlessly between
+%% different bookmark formats of IE, Chrome, Firefox and so on because
+%% it can abstract the structure, alter it the right way, and
+%% concretize the structure for one of the other browsers.
+%%
+%% Getting the same ability in Erlang is the goal of this library.
+
 %% LENS DEFINITIONS
 %% ----------------------------------------------------------------------
 
@@ -371,9 +389,9 @@ t2() ->
 %%
 
 %% But it turns out there another way. We can cast the kitten by
-%% creating an abstract view where the kitten is a list-like
+%% creating an abstract view where the kitten is a flattened list
 %% structure. Then when we cast back the kitten into JSON, we can use
-%% that list-like structure to recreate the kitten as JSON.
+%% that list structure to recreate the kitten as JSON.
 abs_lens_kitten_2() ->
     lists:unzip(
       lists:flatten(
@@ -394,6 +412,11 @@ abs_lens_kitten_j_2() ->
 %% JSON object. In a future update of the library this problem can
 %% probably be eliminated by following the exposition of functional
 %% lenses more closely.
+%%
+%% The thing we are missing is "failing" lenses where they return
+%% something of term Omega. If we had this, we could handle the case
+%% by building up the structure from "nothing". But as it currently
+%% stands, we can't.
 json_kitten_init() ->
     [{<<"color">>, []}].
 
