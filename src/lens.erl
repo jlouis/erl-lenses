@@ -28,6 +28,11 @@
 %% by J. Nathan Foster et.al. It contains a lot of information how to
 %% extend these ideas to a full language of Bidirectional programming.
 
+%% A NOTE ABOUT PERFORMANCE
+%% ----------------------------------------------------------------------
+
+%% This is not built for the sake of raw conversion speed. If you need
+%% that, you need something else. This is built because it is 
 %% LENS DEFINITIONS
 %% ----------------------------------------------------------------------
 
@@ -287,14 +292,19 @@ iso_simple_test() ->
 
 %% In general this isomorphism should hold for any color. There are
 %% two directions to show:
-prop_iso_identity_fw() ->
-    {Fw, Bw} = iso(abs_lens_color(), abs_lens_color_p()),
-    ?FORALL(C, gen_color(),
-            C == Bw(Fw(C, []), #color{})).
-prop_iso_identity_bw() ->
-    {Fw, Bw} = iso(abs_lens_color(), abs_lens_color_p()),
-    ?FORALL(C, gen_color_p(),
-            C == Fw(Bw(C, #color{}), [])).
+iso_identity_fw(Gen, L1, L2, I1, I2) ->
+    {Fw, Bw} = iso(L1, L2),
+    ?FORALL(C, Gen,
+            C == Bw(Fw(C, I1), I2)).
+iso_identity_bw(Gen, L1, L2, I1, I2) ->
+    {Fw, Bw} = iso(L1, L2),
+    ?FORALL(C, Gen,
+            C == Fw(Bw(C, I2), I1)).
+
+prop_iso_identity_fw_color_p() ->
+    iso_identity_fw(gen_color(), abs_lens_color(), abs_lens_color_p(), [], #color{}).
+prop_iso_identity_bw_color_p() ->
+    iso_identity_bw(gen_color_p(), abs_lens_color(), abs_lens_color_p(), [], #color{}).
 
 %% A JSON library such as JSX encodes our structure as the following:
 color_json(R,G,B) ->
@@ -348,10 +358,11 @@ abs_lens_kitten_j() ->
 
 %% With this, we can do the following isomorphism. The problem though
 %% is that we are still handling the knowledge about colors inside kittens.
-%% 
+%%
+%% Still, given a parse transformation, this could be automatic as well.
 t2() ->
-    {KittenFw, KittenBw} = iso(abs_lens_kitten(), abs_lens_kitten_j()),
-    {ColorFw, ColorBw} = iso(abs_lens_color(), abs_lens_color_j()),
+    {KittenFw, _KittenBw} = iso(abs_lens_kitten(), abs_lens_kitten_j()),
+    {ColorFw, _ColorBw} = iso(abs_lens_color(), abs_lens_color_j()),
     Ming = #kitten { color = C } = merciless_ming(black),
     jsx:to_term(
       KittenFw(Ming#kitten {color = ColorFw(C, []) }, [])).
@@ -359,11 +370,82 @@ t2() ->
 %% ... <<"{\"name\":\"merciless ming\",\"color\":{\"r\":0.0,\"g\":0.0,\"b\":0.0}}">>
 %%
 
-%% 
-%% TODO: Remedy the composition problem!
-%%
-%% Missing parts:
-%% * JSON and lenses
+%% But it turns out there another way. We can cast the kitten by
+%% creating an abstract view where the kitten is a list-like
+%% structure. Then when we cast back the kitten into JSON, we can use
+%% that list-like structure to recreate the kitten as JSON.
+abs_lens_kitten_2() ->
+    lists:unzip(
+      lists:flatten(
+        [lens_kitten(name),
+         [compose(lens_kitten(color), L)
+          || L <- [lens_color(C) || C <- [r,g,b]]]])).
+
+abs_lens_kitten_j_2() ->
+    lists:unzip(
+      lists:flatten(
+        [lens_kitten_j(name),
+         [compose(lens_kitten_j(color), L)
+          || L <- [lens_color_j(C) || C <- [r,g,b]]]])).
+
+%% This construction is due to an error in the lens library as it
+%% currently stands. The library can't cope with elements that "aren't
+%% there". So you need to provide the skeletal structure of the Kitten
+%% JSON object. In a future update of the library this problem can
+%% probably be eliminated by following the exposition of functional
+%% lenses more closely.
+json_kitten_init() ->
+    [{<<"color">>, []}].
+
+%% This allows us to Make kittens into JSON structures
+t3() ->
+    {KittenFw, _KittenBw} = iso(abs_lens_kitten_2(), abs_lens_kitten_j_2()),
+    jsx:to_json(
+      KittenFw(merciless_ming(black), json_kitten_init())).
+
+%% We can also go the other way:
+t4() ->
+    {_KittenFw, KittenBw} = iso(abs_lens_kitten_2(), abs_lens_kitten_j_2()),
+    KittenBw([{<<"name">>, <<"Dale Arden">>},
+              {<<"color">>, [{<<"r">>, 1.0},
+                             {<<"g">>, 1.0},
+                             {<<"b">>, 0.75}]}],
+             #kitten { color = #color{}}).
+
+%% And let us make sure we can do it the right way, with a QuickCheck Property
+prop_iso_identity_fw_kitten() ->
+    iso_identity_fw(gen_kitten(),
+                    abs_lens_kitten_2(),
+                    abs_lens_kitten_j_2(),
+                    json_kitten_init(),
+                    #kitten { color = #color{} }).
+
+gen_kitten_json() ->
+    ?LET({Name, C}, {binary(), gen_color_j()},
+         %% The order matters here currently. Due to
+         %% the way the propery is written. So color
+         %% has to come first. to create a canonical form.
+         [{<<"color">>, C}, 
+          {<<"name">>, Name}]).
+
+prop_iso_identity_bw_kitten() ->
+    iso_identity_bw(gen_kitten_json(),
+                    abs_lens_kitten_2(),
+                    abs_lens_kitten_j_2(),
+                    json_kitten_init(),
+                    #kitten { color = #color{}}).
+
+%% At this point we have the necessary machine to convert back and
+%% forth between different data. But there is a whole algebra of
+%% lenses we have yet to touch: hoist, plunge, map, filter, wmap, ...
+%% The above proves we can reasonably well operate with Lenses in
+%% Erlang, but we do need some help to make them better.
+
+%% One of the mistakes of the above is that it does not treat failure,
+%% i.e., the Omega term correctly. To be a correct lens you need to be
+%% able to do the "right thing" if there is no element under the lens
+%% to get. This is why we currently needs "skeletons" in the above
+%% code. If we add error handling of Omega correctly, this goes away.
 
 %% To make sure everything is okay, this call verifies all the
 %% properties inside the module, so we make sure that we don't cheat
