@@ -22,6 +22,11 @@
 %% lenses initially and to Sebastiaan Visser and many other members
 %% of the Haskell community for first writing up lenses and
 %% popularizing them.
+%%
+%% Also read something like ``Combinators for Bi-Directional Tree
+%% Transformations: A Linguistic Approach to the View Update Problem''
+%% by J. Nathan Foster et.al. It contains a lot of information how to
+%% extend these ideas to a full language of Bidirectional programming.
 
 %% LENS DEFINITIONS
 %% ----------------------------------------------------------------------
@@ -76,7 +81,7 @@ lens_kitten(color) -> access_e(#kitten.color).
 %% functions for accessing the proplist:
 access_p(Key) ->
     {fun(R) -> element(2, lists:keyfind(Key, 1, R)) end,
-     fun(A, R) -> lists:keyreplace(Key, 1, R, {Key, A}) end}.
+     fun(A, R) -> lists:keystore(Key, 1, R, {Key, A}) end}.
               
 %% We manually derive the needed lenses
 lens_color_p(r) -> access_p(r);
@@ -232,9 +237,132 @@ simple_modify_test() ->
     ?assertEqual(merciless_ming(red),
                  (modify(lens_kitten_color(r), fun(C) -> C + 1.0 end))(Kitten)).
 
+%% ISOMORPHISMS
+%% ----------------------------------------------------------------------
 
+%% The cool thing about lens structures is that they provide us ways
+%% to derive automated isomorphism translations betweens different
+%% structures of data.
+%%
+%% Our current setup has kittens represented as records. But perhaps
+%% we would like to have a proplist like structure of kittens inside.
+%% This is achivable with a little more work.
+
+%% Here is an abstract view of a color:
+abs_lens_color() ->
+    lists:unzip(
+      [lens_color(r),
+       lens_color(g),
+       lens_color(b)]).
+
+%% The same abstract view of colors as proplists:
+abs_lens_color_p() ->
+    lists:unzip(
+      [lens_color_p(r),
+       lens_color_p(g),
+       lens_color_p(b)]).
+
+%% We can now use these full abstract views to provide a way to
+%% compute in the isomorphism, converting back and forth between
+%% representations.
+iso({GsF, PsF} = _FromLens, {GsT, PsT} = _ToLens) ->
+    {fun(Source, Target) ->
+             AbstractView = [F(Source) || F <- GsF],
+             lists:foldl(fun({F, E}, Acc) -> F(E, Acc) end,
+                         Target,
+                         lists:zip(PsT, AbstractView))
+     end,
+     fun(Source, Target) ->
+             AbstractView = [F(Source) || F <- GsT],
+             lists:foldl(fun({F, E}, Acc) -> F(E, Acc) end,
+                         Target,
+                         lists:zip(PsF, AbstractView))
+     end}.
+
+iso_simple_test() ->
+    C = #color { r = 1.0, g = 0.25, b = 0.30},
+    {Fw, Bw} = iso(abs_lens_color(), abs_lens_color_p()),
+    AsPropList = Fw(C, []),
+    ?assertEqual(C, Bw(AsPropList, #color{})).
+
+%% In general this isomorphism should hold for any color. There are
+%% two directions to show:
+prop_iso_identity_fw() ->
+    {Fw, Bw} = iso(abs_lens_color(), abs_lens_color_p()),
+    ?FORALL(C, gen_color(),
+            C == Bw(Fw(C, []), #color{})).
+prop_iso_identity_bw() ->
+    {Fw, Bw} = iso(abs_lens_color(), abs_lens_color_p()),
+    ?FORALL(C, gen_color_p(),
+            C == Fw(Bw(C, #color{}), [])).
+
+%% A JSON library such as JSX encodes our structure as the following:
+color_json(R,G,B) ->
+    [{<<"r">>, R},
+     {<<"g">>, G},
+     {<<"b">>, B}].
+
+access_j(K) ->
+    Key = list_to_binary(atom_to_list(K)),
+    {fun(R) -> element(2, lists:keyfind(Key, 1, R)) end,
+     fun(A, R) ->
+             lists:keystore(Key, 1, R, {Key, A})
+     end}.
+
+lens_color_j(r) -> access_j(r);
+lens_color_j(g) -> access_j(g);
+lens_color_j(b) -> access_j(b).
+
+%% Establish that this works by "proof".
+gen_color_j() ->
+    ?LET({R, G, B}, {real(), real(), real()},
+         color_json(R, G, B)).
+
+prop_color_j_r_gp() -> lens_prop_getput(gen_color_j(), lens_color_j(r)).
+prop_color_j_g_gp() -> lens_prop_getput(gen_color_j(), lens_color_j(g)).
+prop_color_j_b_gp() -> lens_prop_getput(gen_color_j(), lens_color_j(b)).
+prop_color_j_r_pg() -> lens_prop_putget(gen_color_j(), real(), lens_color_j(r)).
+prop_color_j_g_pg() -> lens_prop_putget(gen_color_j(), real(), lens_color_j(g)).
+prop_color_j_b_pg() -> lens_prop_putget(gen_color_j(), real(), lens_color_j(b)).
+
+%% Now, do as before, generate an abstract view of these
+abs_lens_color_j() ->
+    lists:unzip(
+      [lens_color_j(r),
+       lens_color_j(g),
+       lens_color_j(b)]).
+
+%% We can do the exact same thing for our kitten:
+lens_kitten_j(name) -> access_j(name);
+lens_kitten_j(color) -> access_j(color).
+
+abs_lens_kitten() ->
+    lists:unzip(
+      [lens_kitten(name),
+       lens_kitten(color)]).
+
+abs_lens_kitten_j() ->
+    lists:unzip(
+      [lens_kitten_j(name),
+       lens_kitten_j(color)]).
+
+%% With this, we can do the following isomorphism. The problem though
+%% is that we are still handling the knowledge about colors inside kittens.
+%% 
+t2() ->
+    {KittenFw, KittenBw} = iso(abs_lens_kitten(), abs_lens_kitten_j()),
+    {ColorFw, ColorBw} = iso(abs_lens_color(), abs_lens_color_j()),
+    Ming = #kitten { color = C } = merciless_ming(black),
+    jsx:to_term(
+      KittenFw(Ming#kitten {color = ColorFw(C, []) }, [])).
+%%
+%% ... <<"{\"name\":\"merciless ming\",\"color\":{\"r\":0.0,\"g\":0.0,\"b\":0.0}}">>
+%%
+
+%% 
+%% TODO: Remedy the composition problem!
+%%
 %% Missing parts:
-%% * Pair-lists and lenses
 %% * JSON and lenses
 
 %% To make sure everything is okay, this call verifies all the
