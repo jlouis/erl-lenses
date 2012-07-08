@@ -34,10 +34,13 @@
 %% Likewise for the 'b' parameter.
 lens_r_naive(a) -> {fun(#r { a = A}) -> A end,
                     fun(X, R) -> R#r { a = X } end};
+%% Note that a Lens L = {Get, Put} consists of two parts. A "getter"
+%% which can access an element and a mutator called "Put" which
+%% functionally updates an element inside the lens.
 lens_r_naive(b) -> {fun(#r { b = A }) -> A end,
                     fun(X, R) -> R#r { b = X } end}.
 
-%% This will get tedious in the long run...
+%% This will get tedious in the long run to write the above. Abstract!
 access_e(N) ->
     {fun(R) -> element(N, R) end,
      fun(A, R) -> setelement(N, R, A) end}.
@@ -55,7 +58,12 @@ lens_r(b) -> access_e(#r.b).
 -record(kitten, {name :: string(),
                  color :: #color{} }).
 
-%% We manually derive the needed lenses, but first a helper
+%% We manually derive the needed lenses, here. In a fuller
+%% implementation, we would use a parse transform
+%% -lenses([record1, record2, ...]). To automatically derive lens
+%% accessors for the records. But for now, we will limit ourselves to
+%% not doing so. There are other parts which are more important to get
+%% up and running.
 lens_color(r) -> access_e(#color.r);
 lens_color(g) -> access_e(#color.g);
 lens_color(b) -> access_e(#color.b).
@@ -63,6 +71,20 @@ lens_color(b) -> access_e(#color.b).
 lens_kitten(name) -> access_e(#kitten.name);
 lens_kitten(color) -> access_e(#kitten.color).
 
+%% It turns out that a proplist is also a lens, if you use the right
+%% functions for accessing the proplist:
+access_p(Key) ->
+    {fun(R) -> element(2, lists:keyfind(Key, 1, R)) end,
+     fun(A, R) -> lists:keyreplace(Key, 1, R, {Key, A}) end}.
+              
+%% We manually derive the needed lenses
+lens_color_p(r) -> access_p(r);
+lens_color_p(g) -> access_p(g);
+lens_color_p(b) -> access_p(b).
+
+lens_kitten_p(name) -> access_p(name);
+lens_kitten_p(color) -> access_p(color).
+    
 %% INITIAL PROPERTIES OF LENSES
 %% ----------------------------------------------------------------------
 
@@ -72,6 +94,23 @@ lens_kitten(color) -> access_e(#kitten.color).
 gen_r() ->
     ?LET({A, B}, {int(), int()},
          #r { a = A, b = B}).
+
+%% Likewise, let us generate colors and kittens:
+gen_color() ->
+    ?LET({R, G, B}, {real(), real(), real()},
+         #color { r = R, g = G, b = B}).
+
+gen_kitten() ->
+    ?LET({N, C}, {binary(), gen_color()},
+         #kitten { name = N, color = C}).
+
+%% Since we also have proplist derivers for kittens:
+gen_color_p() ->
+    ?LET({R, G, B}, {real(), real(), real()},
+         [{r, R}, {g, G}, {b, B}]).
+gen_kitten_p() ->
+    ?LET({N, C}, {binary(), gen_color_p()},
+         [{name, N}, {color, C}]).
 
 %% Lenses have three properties. If we get out a value and then
 %% subsequently put it, nothing should change.
@@ -111,6 +150,14 @@ prop_r_b_pg() -> lens_prop_putget(gen_r(), int(), lens_r(b)).
 prop_r_a_pp() -> lens_prop_putput(gen_r(), int(), lens_r(a)).
 prop_r_b_pp() -> lens_prop_putput(gen_r(), int(), lens_r(b)).
 
+%% But the Color Proplist is also a Lens!
+prop_color_p_r_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(r)).
+prop_color_p_g_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(g)).
+prop_color_p_b_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(b)).
+
+prop_color_p_r_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(r)).
+prop_color_p_g_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(g)).
+prop_color_p_b_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(b)).
 
 %% LENS COMPOSITION
 %% ----------------------------------------------------------------------
@@ -142,7 +189,7 @@ prop_id_pg() -> lens_prop_putget(int(), int(), lens_id()).
 compose(Lenses) when is_list(Lenses) ->
     lists:foldl(fun compose/2, lens_id(), Lenses).
 
-%% *** KITTENS!
+%% Let us compose ...              
 
 %% Here will be a nice part about lens composition over kittens :)
 %% TODO
@@ -156,5 +203,5 @@ compose(Lenses) when is_list(Lenses) ->
 %% properties inside the module, so we make sure that we don't cheat
 %% on the definitions
 t() ->
-    eqc:module({numtests, 1000}, ?MODULE).
+    eqc:module({numtests, 100}, ?MODULE).
 
