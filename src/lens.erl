@@ -1,6 +1,7 @@
 -module(lens).
 
 -include_lib("eqc/include/eqc.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -compile(export_all).
 
@@ -154,7 +155,6 @@ prop_r_b_pp() -> lens_prop_putput(gen_r(), int(), lens_r(b)).
 prop_color_p_r_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(r)).
 prop_color_p_g_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(g)).
 prop_color_p_b_gp() -> lens_prop_getput(gen_color_p(), lens_color_p(b)).
-
 prop_color_p_r_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(r)).
 prop_color_p_g_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(g)).
 prop_color_p_b_pg() -> lens_prop_putget(gen_color_p(), real(), lens_color_p(b)).
@@ -187,15 +187,53 @@ prop_id_pg() -> lens_prop_putget(int(), int(), lens_id()).
 %% a composition over a list of lenses. There is a strong indication
 %% that we have a MONOID over lenses.
 compose(Lenses) when is_list(Lenses) ->
-    lists:foldl(fun compose/2, lens_id(), Lenses).
+    lists:foldr(fun compose/2, lens_id(), Lenses).
 
-%% Let us compose ...              
+%% The key trick here is that we are able to compose lenses. Let's say
+%% we want to manipulate the red color property of a kitten:
+lens_kitten_color(r) ->
+    compose([lens_kitten(color),
+             lens_color(r)]).
 
-%% Here will be a nice part about lens composition over kittens :)
-%% TODO
+%% Let us write a simple test for our composition...
+
+%% Merciless ming is a kitten!
+merciless_ming(black) ->
+    #kitten {name = <<"merciless ming">>,
+             color = #color {r = 0.0, g = 0.0, b = 0.0}};
+merciless_ming(red) ->
+    #kitten {name = <<"merciless ming">>,
+             color = #color {r = 1.0, g = 0.0, b = 0.0}}.
+
+
+simple_lens_test() ->
+    Kitten = merciless_ming(black),
+    {Get, Put} = lens_kitten_color(r),
+    ?assertEqual(0.0, Get(Kitten)),
+    ?assertEqual(merciless_ming(red), Put(1.0, Kitten)).
+
+%% And raise it to an EQC property of the same thing
+prop_kitten_color_gp() ->
+    lens_prop_getput(gen_kitten(), lens_kitten_color(r)).
+prop_kitten_color_pg() ->
+    lens_prop_putget(gen_kitten(), real(), lens_kitten_color(r)).
+     
+%% That is, our algebra of lenses of lenses allows us to do ad-hoc
+%% queries over deep structures by just composing existing structures
+%% like in the above. And also update them in the same go via
+%% modification. It is simply the function applied inside the lens.
+modify({Get, Put} = _Lens, F) ->
+    fun(X) ->
+            Put(F(Get(X)), X)
+    end.
+
+simple_modify_test() ->
+    Kitten = merciless_ming(black),
+    ?assertEqual(merciless_ming(red),
+                 (modify(lens_kitten_color(r), fun(C) -> C + 1.0 end))(Kitten)).
+
 
 %% Missing parts:
-%% * Modify of lenses.
 %% * Pair-lists and lenses
 %% * JSON and lenses
 
@@ -203,5 +241,6 @@ compose(Lenses) when is_list(Lenses) ->
 %% properties inside the module, so we make sure that we don't cheat
 %% on the definitions
 t() ->
+    eunit:test({inparallel, ?MODULE}),
     eqc:module({numtests, 100}, ?MODULE).
 
